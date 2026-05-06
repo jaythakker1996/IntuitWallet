@@ -1,8 +1,8 @@
 -- spec/005: Ledger schema bootstrap (ADR 003 + ADR 004).
--- Creates wallets, transactions (partitioned), ledger_entries (partitioned),
--- pre-creates monthly partitions for the current dev window (May/Jun/Jul 2026),
--- and seeds the four SYSTEM wallets.
--- No foreign keys per ADR 004 §2 (cross-region active-active portability).
+-- Creates wallets, transactions, ledger_entries and seeds the four
+-- SYSTEM wallets. No foreign keys per ADR 004 §2 (cross-region active-active
+-- portability). Partitioning is deferred per ADR 004 §6 and reintroduced
+-- via copy-rebuild before production rollout.
 
 -- =============================================================
 -- wallets (per ADR 003 §2)
@@ -45,8 +45,8 @@ CREATE TABLE transactions (
     idempotency_key      TEXT          NOT NULL,
     request_hash         TEXT          NOT NULL,
     created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (tx_id, created_at)
-) PARTITION BY RANGE (created_at);
+    PRIMARY KEY (tx_id)
+);
 
 CREATE UNIQUE INDEX idx_tx_idempotency
     ON transactions (from_party, idempotency_key);
@@ -56,13 +56,6 @@ CREATE INDEX idx_tx_to_created
     ON transactions (to_party, created_at DESC);
 CREATE INDEX idx_tx_pending
     ON transactions (status) WHERE status = 'PENDING';
-
-CREATE TABLE transactions_y2026m05 PARTITION OF transactions
-    FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
-CREATE TABLE transactions_y2026m06 PARTITION OF transactions
-    FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
-CREATE TABLE transactions_y2026m07 PARTITION OF transactions
-    FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
 
 -- =============================================================
 -- ledger_entries (per ADR 004 §4)
@@ -80,8 +73,8 @@ CREATE TABLE ledger_entries (
     running_pending    NUMERIC(28,8) NOT NULL CHECK (running_pending >= 0),
     entry_sequence     BIGINT        NOT NULL,
     created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (entry_id, created_at)
-) PARTITION BY RANGE (created_at);
+    PRIMARY KEY (entry_id)
+);
 
 CREATE UNIQUE INDEX idx_ledger_seq
     ON ledger_entries (wallet_id, stablecoin, entry_sequence);
@@ -89,13 +82,6 @@ CREATE INDEX idx_ledger_latest
     ON ledger_entries (wallet_id, stablecoin, entry_sequence DESC);
 CREATE INDEX idx_ledger_tx
     ON ledger_entries (tx_id);
-
-CREATE TABLE ledger_entries_y2026m05 PARTITION OF ledger_entries
-    FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
-CREATE TABLE ledger_entries_y2026m06 PARTITION OF ledger_entries
-    FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
-CREATE TABLE ledger_entries_y2026m07 PARTITION OF ledger_entries
-    FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
 
 -- =============================================================
 -- SYSTEM wallet seed (per ADR 004 §8)

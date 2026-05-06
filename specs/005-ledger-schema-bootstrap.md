@@ -8,7 +8,7 @@
 
 ## Problem
 
-ADR 003 describes the `wallets` table. ADR 004 describes `transactions` and `ledger_entries`, the partitioning strategy, and the system-wallet seeding. None of those tables exist in the database yet — the only Flyway migration so far is `V1__users.sql`.
+ADR 003 describes the `wallets` table. ADR 004 describes `transactions` and `ledger_entries`, the running-balance write protocol, the reversal model, and the system-wallet seeding. None of those tables exist in the database yet — the only Flyway migration so far is `V1__users.sql`.
 
 Subsequent feature specs (send-payment, fund-wallet, wallet-create, …) need the schema in place before they can add their workflow + activity + controller. Splitting schema-bootstrap from feature work keeps the first feature spec focused on a single endpoint, and lets us validate the schema in isolation: Flyway applies cleanly against an empty DB, `ddl-auto=validate` later catches entity drift, and the SYSTEM wallets are queryable by name from day one.
 
@@ -18,7 +18,6 @@ This spec lands the entire ADR 003 + ADR 004 schema contract in one migration an
 
 - **Goals**
   - Single Flyway migration `V2__ledger_schema.sql` creating the `wallets`, `transactions`, and `ledger_entries` tables exactly as specified in ADR 003 §2 and ADR 004 §3 / §4.
-  - Range-partition `transactions` and `ledger_entries` by `created_at` month at table creation; pre-create partitions for the current and next two months.
   - Seed the four `SYSTEM` wallets (`external_deposits`, `external_withdrawals`, `fee_revenue`, `treasury`) per ADR 004 §8.
   - Migration applies cleanly via `./gradlew bootRun` and `docker compose up -d --build` against an empty database.
 - **Non-goals**
@@ -26,7 +25,7 @@ This spec lands the entire ADR 003 + ADR 004 schema contract in one migration an
   - Any HTTP endpoint.
   - The `outbox` table — explicitly out of scope (ADR 004 §9).
   - The append-only Postgres trigger on `ledger_entries` — deferred per ADR 004 §9.
-  - Partition-management automation (auto-create next month, archive old) — operational concern, not part of this spec.
+  - **Range partitioning of `transactions` and `ledger_entries`** — deferred per ADR 004 §6. Tables ship as plain (non-partitioned) tables for the POC; partitioning is reintroduced via a copy-rebuild migration before production rollout.
   - Compliance / batch / QR / external-address tables.
 
 ## API
@@ -78,8 +77,8 @@ CREATE TABLE transactions (
     idempotency_key      TEXT         NOT NULL,
     request_hash         TEXT         NOT NULL,
     created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (tx_id, created_at)
-) PARTITION BY RANGE (created_at);
+    PRIMARY KEY (tx_id)
+);
 
 CREATE UNIQUE INDEX idx_tx_idempotency ON transactions (from_party, idempotency_key);
 CREATE INDEX        idx_tx_from_created ON transactions (from_party, created_at DESC);
@@ -102,19 +101,13 @@ CREATE TABLE ledger_entries (
     running_pending    NUMERIC(28,8) NOT NULL CHECK (running_pending   >= 0),
     entry_sequence     BIGINT        NOT NULL,
     created_at         TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (entry_id, created_at)
-) PARTITION BY RANGE (created_at);
+    PRIMARY KEY (entry_id)
+);
 
 CREATE UNIQUE INDEX idx_ledger_seq    ON ledger_entries (wallet_id, stablecoin, entry_sequence);
 CREATE INDEX        idx_ledger_latest ON ledger_entries (wallet_id, stablecoin, entry_sequence DESC);
 CREATE INDEX        idx_ledger_tx     ON ledger_entries (tx_id);
 ```
-
-### Monthly partitions (current + next 2 months)
-
-For each of `transactions` and `ledger_entries`, create three monthly child partitions covering `[first-of-current-month, first-of-month+3)` so writes during this development window always have a partition to land in. Naming convention: `<table>_yYYYYmMM` (e.g. `transactions_y2026m05`).
-
-Authored statically in `V2__ledger_schema.sql` for May / June / July 2026 (current dev window). A periodic partition-management job is out of scope; production rollout will replace this static block with an automated rolling window.
 
 ### SYSTEM wallet seed (per ADR 004 §8)
 
@@ -145,7 +138,7 @@ N/A — this spec adds no workflow. Workflow code lands with the first transacti
 - [ ] `./gradlew build` is clean.
 - [ ] `docker compose down -v && docker compose up -d --build` produces an app that reaches `actuator/health` UP.
 - [ ] Against the resulting DB, all four expected tables exist: `users`, `wallets`, `transactions`, `ledger_entries`.
-- [ ] `transactions` and `ledger_entries` are partitioned (`SELECT * FROM pg_partitioned_table` returns rows for both); their three monthly child partitions exist (`SELECT inhrelid::regclass FROM pg_inherits WHERE inhparent IN ('transactions'::regclass, 'ledger_entries'::regclass)` returns six rows).
+- [ ] `transactions` and `ledger_entries` are plain (non-partitioned) tables — `SELECT count(*) FROM pg_partitioned_table` returns `0`. Partitioning is deferred per ADR 004 §6.
 - [ ] `SELECT count(*) FROM wallets WHERE type='SYSTEM'` returns `4`.
 - [ ] `SELECT wallet_id FROM wallets WHERE type='SYSTEM' ORDER BY wallet_id` returns the four reserved UUIDs (`…ed01`, `…ed02`, `…ed03`, `…ed04`).
 - [ ] `flyway_schema_history` shows V2 applied with `success = true`.
