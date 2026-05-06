@@ -22,7 +22,7 @@ The wallet design is informed by the broader Intuit Global Stablecoin Wallet des
 - **System wallets** (`type = SYSTEM`) exist so every external transaction still balances to zero — the user's wallet on one side, a system account (`external_deposits`, `external_withdrawals`, `fee_revenue`, `treasury`) on the other.
 - Cardinality: one wallet per user (1:1 with `users.intuit_account_id`). One identity, one wallet, accessible across products.
 
-ADR 003 records only the wallet-side decisions. ADR 004 will record the transactions / ledger-entries / outbox schema and the running-balance write protocol in detail.
+ADR 003 records only the wallet-side decisions. ADR 004 will record the transactions / ledger-entries schema and the running-balance write protocol in detail.
 
 ## Decision
 
@@ -30,7 +30,7 @@ ADR 003 records only the wallet-side decisions. ADR 004 will record the transact
 
 Wallet **is not** a User-style POC carve-out. The [ADR 001](001-tech-stack.md) default applies: every state-changing wallet operation is orchestrated by a Temporal workflow.
 
-- Wallet provisioning isn't a single-row insert in the broader design — it fans out across the Ledger Core DB (the `wallets` row), seeded ledger state if needed, and (when ADR 004 lands) the outbox / event publication that downstream BU products listen for. Even at POC scope, this is the shape the workflow needs to land in; wrapping it in a workflow now means ADR 004 only adds activities, never restructures the call path.
+- Wallet provisioning isn't a single-row insert in the broader design — it fans out across the Ledger Core DB (the `wallets` row, plus seeded ledger state when ADR 004 lands). Even at POC scope, this is the shape the workflow needs to land in; wrapping it in a workflow now means ADR 004 only adds activities, never restructures the call path.
 - Status mutations (`FREEZE`, `CLOSE`) are compliance-driven and need retries, audit history, and visibility — exactly what Temporal gives us for free.
 - It keeps the call-flow rule honest. The User carve-out is explicitly tagged as a POC stub for an entity that wouldn't live in this service in production; widening it to wallet — which **does** live in this service in production — would erode the rule on its first real test.
 
@@ -76,7 +76,6 @@ ADR 003 explicitly does **not** specify any of the following — they belong to 
 
 - The `transactions` table.
 - The `ledger_entries` table (including `running_available`, `running_pending`, `entry_sequence`).
-- The `outbox` table for cross-region event delivery.
 - The running-balance write protocol and its optimistic-concurrency mechanism.
 - The partitioning strategy for `ledger_entries` and `transactions`.
 - Idempotency-key + request-hash storage on transactions.
@@ -94,12 +93,12 @@ ADR 003 explicitly does **not** specify any of the following — they belong to 
 
 - **Negative**
   - Reading a balance requires hitting `ledger_entries`, not `wallets` — the read path is ADR 004's responsibility, not a one-liner here. Acceptable: balance correctness > read shortcut, and the running-balance pattern still gets a single-row index lookup per stablecoin.
-  - Wallet creation pays Temporal's overhead (workflow + activity) for what is, in the POC, a single-row insert. Accepted up front in exchange for a stable call-flow shape; the cost shrinks fast once the wallet-creation activity also has to write the outbox event.
+  - Wallet creation pays Temporal's overhead (workflow + activity) for what is, in the POC, a single-row insert. Accepted up front in exchange for a stable call-flow shape; the cost shrinks fast once the wallet-creation activity grows to seed ledger state and publish events as those features land.
   - Existence of the referenced user is enforced in code rather than by a DB constraint — a stale `intuit_account_id` in `wallets` is now possible if the verification step is skipped. Mitigated by performing the check in the wallet-creation activity and (in production) by daily reconciliation between identity and Ledger Core.
   - System wallets carry a synthetic `intuit_account_id` purely to satisfy `UNIQUE NOT NULL` — slightly ugly, but cheaper than a nullable column or a separate `system_accounts` table that would duplicate the ledger's wallet-id surface.
 
 - **Follow-ups**
-  - ADR 004: transactions, ledger entries, outbox, running-balance write protocol, partitioning, idempotency-key storage, system-wallet seeding migration.
+  - ADR 004: transactions, ledger entries, running-balance write protocol, partitioning, idempotency-key storage, system-wallet seeding migration.
   - First wallet feature spec adds `V2__wallets.sql`, the `Wallet` entity, repository, core service, DTOs, controller, and the wallet-creation workflow / activity.
   - Auth/authorization ADR before wallet APIs go public (same as for User).
   - Admin-only `FREEZE` / `CLOSE` flow as a separate spec once compliance reasons get involved.
