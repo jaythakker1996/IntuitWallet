@@ -15,6 +15,9 @@ spring:
     connection:
       target: ${TEMPORAL_ADDRESS:localhost:7233}
     namespace: ${TEMPORAL_NAMESPACE:default}
+    workers-auto-discovery:
+      packages:
+        - com.intuit.walletservice.businesslogic
     workers:
       - task-queue: wallet-service
         name: wallet-service-worker
