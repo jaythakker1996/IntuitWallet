@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -177,6 +178,112 @@ class LedgerCoreServiceTest {
 
         assertThatThrownBy(() -> ledgerCoreService.findByIdempotency(alice.toString(), "k-find", "other-hash"))
                 .isInstanceOf(IdempotencyConflictException.class);
+    }
+
+    // ===== getBalance / getBalances (spec/008) =====
+
+    @Test
+    void getBalance_existingEntry_returnsLatestRunningAvailable() {
+        seedBalance(alice, "100.00");
+
+        WalletBalanceView view = ledgerCoreService.getBalance(alice, STABLECOIN);
+
+        assertThat(view.walletId()).isEqualTo(alice);
+        assertThat(view.stablecoin()).isEqualTo(STABLECOIN);
+        assertThat(view.runningAvailable()).isEqualByComparingTo("100.00");
+        assertThat(view.runningPending()).isEqualByComparingTo("0");
+        assertThat(view.lastEntrySequence()).isEqualTo(1L);
+        assertThat(view.lastEntryAt()).isNotNull();
+    }
+
+    @Test
+    void getBalance_noEntry_throwsStablecoinBalanceNotFound() {
+        // alice exists in seedWallets but has no ledger entries.
+        assertThatThrownBy(() -> ledgerCoreService.getBalance(alice, STABLECOIN))
+                .isInstanceOf(StablecoinBalanceNotFoundException.class)
+                .hasMessageContaining(STABLECOIN)
+                .hasMessageContaining(alice.toString());
+    }
+
+    @Test
+    void getBalance_drainedToZero_returnsZeroNot404() {
+        seedBalance(alice, "10.00");
+        ledgerCoreService.executeTransfer(req("SEND", alice, bob, "10.00", "k-drain"));
+
+        WalletBalanceView view = ledgerCoreService.getBalance(alice, STABLECOIN);
+
+        assertThat(view.runningAvailable()).isEqualByComparingTo("0");
+        assertThat(view.lastEntrySequence()).isEqualTo(2L); // 1 seed + 1 send debit
+    }
+
+    @Test
+    void getBalance_afterMultipleSends_reflectsLatestRunningAvailable() {
+        seedBalance(alice, "100.00");
+        ledgerCoreService.executeTransfer(req("SEND", alice, bob, "10.00", "k1"));
+        ledgerCoreService.executeTransfer(req("SEND", alice, bob, "5.00", "k2"));
+        ledgerCoreService.executeTransfer(req("SEND", alice, bob, "3.00", "k3"));
+
+        assertThat(ledgerCoreService.getBalance(alice, STABLECOIN).runningAvailable())
+                .isEqualByComparingTo("82.00");
+    }
+
+    @Test
+    void getBalances_walletWithMultipleStablecoins_returnsOnePerStablecoinSorted() {
+        seedBalanceFor(alice, "USDC", "100.00", 1L);
+        seedBalanceFor(alice, "USDT", "50.00", 1L);
+        seedBalanceFor(alice, "EURC", "25.00", 1L);
+
+        List<WalletBalanceView> balances = ledgerCoreService.getBalances(alice);
+
+        assertThat(balances).extracting(WalletBalanceView::stablecoin)
+                .containsExactly("EURC", "USDC", "USDT");
+        assertThat(balances).extracting(WalletBalanceView::runningAvailable)
+                .extracting(BigDecimal::toPlainString)
+                .containsExactly("25.00", "100.00", "50.00");
+    }
+
+    @Test
+    void getBalances_walletWithNoEntries_returnsEmptyList() {
+        assertThat(ledgerCoreService.getBalances(alice)).isEmpty();
+    }
+
+    @Test
+    void getBalances_returnsOnlyLatestEntryPerStablecoin() {
+        // Insert 3 USDC entries with increasing sequence; getBalances should pick the latest only.
+        seedBalanceFor(alice, "USDC", "100.00", 1L);
+        seedBalanceFor(alice, "USDC", "90.00", 2L);
+        seedBalanceFor(alice, "USDC", "75.50", 3L);
+
+        List<WalletBalanceView> balances = ledgerCoreService.getBalances(alice);
+
+        assertThat(balances).hasSize(1);
+        assertThat(balances.get(0).runningAvailable()).isEqualByComparingTo("75.50");
+        assertThat(balances.get(0).lastEntrySequence()).isEqualTo(3L);
+    }
+
+    @Test
+    void getBalances_drainedStablecoin_stillAppearsWithZero() {
+        seedBalance(alice, "10.00");
+        ledgerCoreService.executeTransfer(req("SEND", alice, bob, "10.00", "k-drain"));
+
+        List<WalletBalanceView> balances = ledgerCoreService.getBalances(alice);
+
+        assertThat(balances).hasSize(1);
+        assertThat(balances.get(0).stablecoin()).isEqualTo(STABLECOIN);
+        assertThat(balances.get(0).runningAvailable()).isEqualByComparingTo("0");
+    }
+
+    private void seedBalanceFor(UUID walletId, String stablecoin, String available, long sequence) {
+        ledgerEntryRepository.save(new LedgerEntry(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                walletId,
+                stablecoin,
+                "CREDIT",
+                new BigDecimal(available),
+                new BigDecimal(available),
+                BigDecimal.ZERO,
+                sequence));
     }
 
     private ExecuteTransferRequest req(String type, UUID from, UUID to, String amount, String key) {

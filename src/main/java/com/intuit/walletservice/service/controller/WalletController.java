@@ -1,10 +1,13 @@
 package com.intuit.walletservice.service.controller;
 
+import com.intuit.walletservice.businesslogic.core.LedgerCoreService;
 import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
 import com.intuit.walletservice.businesslogic.core.WalletCoreService;
 import com.intuit.walletservice.businesslogic.core.WalletCoreService.CreateWalletResult;
 import com.intuit.walletservice.businesslogic.workflow.CreateWalletWorkflow;
 import com.intuit.walletservice.service.dto.CreateWalletRequest;
+import com.intuit.walletservice.service.dto.WalletBalanceResponse;
+import com.intuit.walletservice.service.dto.WalletBalancesResponse;
 import com.intuit.walletservice.service.dto.WalletResponse;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowFailedException;
@@ -29,10 +32,15 @@ public class WalletController {
 
     private final WorkflowClient workflowClient;
     private final WalletCoreService walletCoreService;
+    private final LedgerCoreService ledgerCoreService;
 
-    public WalletController(WorkflowClient workflowClient, WalletCoreService walletCoreService) {
+    public WalletController(
+            WorkflowClient workflowClient,
+            WalletCoreService walletCoreService,
+            LedgerCoreService ledgerCoreService) {
         this.workflowClient = workflowClient;
         this.walletCoreService = walletCoreService;
+        this.ledgerCoreService = ledgerCoreService;
     }
 
     @PostMapping
@@ -60,6 +68,20 @@ public class WalletController {
     @GetMapping(params = "intuitAccountId")
     public WalletResponse getByIntuitAccountId(@RequestParam UUID intuitAccountId) {
         return WalletResponse.from(walletCoreService.getByIntuitAccountId(intuitAccountId));
+    }
+
+    @GetMapping("/{walletId}/balances")
+    public WalletBalancesResponse getBalances(@PathVariable UUID walletId) {
+        // Existence check first; throws WalletNotFoundException -> 404 if missing.
+        walletCoreService.getById(walletId);
+        return WalletBalancesResponse.from(walletId, ledgerCoreService.getBalances(walletId));
+    }
+
+    @GetMapping("/{walletId}/balances/{stablecoin}")
+    public WalletBalanceResponse getBalance(
+            @PathVariable UUID walletId, @PathVariable String stablecoin) {
+        walletCoreService.getById(walletId);
+        return WalletBalanceResponse.from(ledgerCoreService.getBalance(walletId, stablecoin));
     }
 
     private static void translateWorkflowFailure(WorkflowFailedException ex, UUID intuitAccountId) {

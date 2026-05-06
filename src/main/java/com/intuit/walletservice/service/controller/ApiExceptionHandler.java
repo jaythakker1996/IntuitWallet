@@ -2,6 +2,7 @@ package com.intuit.walletservice.service.controller;
 
 import com.intuit.walletservice.businesslogic.core.IdempotencyConflictException;
 import com.intuit.walletservice.businesslogic.core.InsufficientBalanceException;
+import com.intuit.walletservice.businesslogic.core.StablecoinBalanceNotFoundException;
 import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
 import com.intuit.walletservice.businesslogic.core.WalletNotActiveException;
 import com.intuit.walletservice.businesslogic.core.WalletNotFoundException;
@@ -24,7 +25,13 @@ public class ApiExceptionHandler {
     @ExceptionHandler(WalletNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleWalletNotFound(WalletNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(Map.of("error", ex.getMessage()));
+                .body(Map.of("error", "WALLET_NOT_FOUND", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(StablecoinBalanceNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleStablecoinBalanceNotFound(StablecoinBalanceNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "STABLECOIN_NOT_ENABLED", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(WalletNotActiveException.class)

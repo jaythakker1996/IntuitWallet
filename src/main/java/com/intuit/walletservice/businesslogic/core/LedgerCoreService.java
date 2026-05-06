@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,6 +47,32 @@ public class LedgerCoreService {
         this.transactionRepository = transactionRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
         this.walletRepository = walletRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public WalletBalanceView getBalance(UUID walletId, String stablecoin) {
+        return ledgerEntryRepository
+                .findTopByWalletIdAndStablecoinOrderByEntrySequenceDesc(walletId, stablecoin)
+                .map(LedgerCoreService::toBalanceView)
+                .orElseThrow(() -> new StablecoinBalanceNotFoundException(
+                        "Stablecoin " + stablecoin + " has not been used by wallet " + walletId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<WalletBalanceView> getBalances(UUID walletId) {
+        return ledgerEntryRepository.findLatestEntriesForWallet(walletId).stream()
+                .map(LedgerCoreService::toBalanceView)
+                .toList();
+    }
+
+    private static WalletBalanceView toBalanceView(LedgerEntry entry) {
+        return new WalletBalanceView(
+                entry.getWalletId(),
+                entry.getStablecoin(),
+                entry.getRunningAvailable(),
+                entry.getRunningPending(),
+                entry.getEntrySequence(),
+                entry.getCreatedAt());
     }
 
     @Transactional(readOnly = true)

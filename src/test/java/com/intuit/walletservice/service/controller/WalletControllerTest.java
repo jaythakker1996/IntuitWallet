@@ -1,6 +1,9 @@
 package com.intuit.walletservice.service.controller;
 
+import com.intuit.walletservice.businesslogic.core.LedgerCoreService;
+import com.intuit.walletservice.businesslogic.core.StablecoinBalanceNotFoundException;
 import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
+import com.intuit.walletservice.businesslogic.core.WalletBalanceView;
 import com.intuit.walletservice.businesslogic.core.WalletCoreService;
 import com.intuit.walletservice.businesslogic.core.WalletCoreService.CreateWalletResult;
 import com.intuit.walletservice.businesslogic.core.WalletNotFoundException;
@@ -19,7 +22,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -43,6 +48,9 @@ class WalletControllerTest {
 
     @MockBean
     private WalletCoreService walletCoreService;
+
+    @MockBean
+    private LedgerCoreService ledgerCoreService;
 
     @Test
     void post_validBodyNewUser_returns201() throws Exception {
@@ -173,6 +181,113 @@ class WalletControllerTest {
     @Test
     void getByIntuitAccountId_missingParam_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/wallets"))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ===== balances (spec/008) =====
+
+    @Test
+    void getBalances_existing_returns200WithList() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(ledgerCoreService.getBalances(eq(walletId))).thenReturn(List.of(
+                new WalletBalanceView(walletId, "EURC", new BigDecimal("25.00"), BigDecimal.ZERO, 1L, now),
+                new WalletBalanceView(walletId, "USDC", new BigDecimal("100.00"), BigDecimal.ZERO, 5L, now)));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/balances", walletId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.walletId").value(walletId.toString()))
+                .andExpect(jsonPath("$.balances.length()").value(2))
+                .andExpect(jsonPath("$.balances[0].stablecoin").value("EURC"))
+                .andExpect(jsonPath("$.balances[0].runningAvailable").value(25.00))
+                .andExpect(jsonPath("$.balances[1].stablecoin").value("USDC"))
+                .andExpect(jsonPath("$.balances[1].runningAvailable").value(100.00))
+                .andExpect(jsonPath("$.balances[1].lastEntrySequence").value(5));
+    }
+
+    @Test
+    void getBalances_existingNoEntries_returns200WithEmptyList() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(ledgerCoreService.getBalances(eq(walletId))).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/balances", walletId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.walletId").value(walletId.toString()))
+                .andExpect(jsonPath("$.balances.length()").value(0));
+    }
+
+    @Test
+    void getBalances_unknownWallet_returns404() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        when(walletCoreService.getById(eq(walletId)))
+                .thenThrow(new WalletNotFoundException("Wallet not found: " + walletId));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/balances", walletId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("WALLET_NOT_FOUND"));
+    }
+
+    @Test
+    void getBalances_malformedUuid_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/wallets/not-a-uuid/balances"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getBalance_existingWithEntries_returns200WithLatest() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(ledgerCoreService.getBalance(eq(walletId), eq("USDC"))).thenReturn(
+                new WalletBalanceView(walletId, "USDC", new BigDecimal("100.00"), BigDecimal.ZERO, 5L, now));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/balances/{coin}", walletId, "USDC"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.walletId").value(walletId.toString()))
+                .andExpect(jsonPath("$.stablecoin").value("USDC"))
+                .andExpect(jsonPath("$.runningAvailable").value(100.00))
+                .andExpect(jsonPath("$.lastEntrySequence").value(5));
+    }
+
+    @Test
+    void getBalance_existingNoStablecoinEntry_returns404WithStablecoinNotEnabled() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(ledgerCoreService.getBalance(eq(walletId), eq("EURC")))
+                .thenThrow(new StablecoinBalanceNotFoundException(
+                        "Stablecoin EURC has not been used by wallet " + walletId));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/balances/{coin}", walletId, "EURC"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("STABLECOIN_NOT_ENABLED"));
+    }
+
+    @Test
+    void getBalance_unknownWallet_returns404WithWalletNotFound() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        when(walletCoreService.getById(eq(walletId)))
+                .thenThrow(new WalletNotFoundException("Wallet not found: " + walletId));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/balances/{coin}", walletId, "USDC"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("WALLET_NOT_FOUND"));
+    }
+
+    @Test
+    void getBalance_malformedUuid_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/wallets/not-a-uuid/balances/USDC"))
                 .andExpect(status().isBadRequest());
     }
 
