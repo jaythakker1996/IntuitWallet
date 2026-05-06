@@ -1,6 +1,6 @@
 # IntuitWalletService
 
-Spring Boot REST service backed by Temporal workflows and PostgreSQL. The business problem statement is being written; the scaffold here is ready for the first feature spec.
+Spring Boot REST service backed by Temporal workflows and PostgreSQL. The business problem statement is being written; the first feature is `User` (POC stub — see ADR 002 and specs 002–004).
 
 ## Prerequisites
 
@@ -22,15 +22,15 @@ Once everything is healthy:
 | Temporal UI | http://localhost:8233 |
 | App Postgres | `localhost:5433` (db `wallet`, user `wallet`, password from `.env`) |
 
-Smoke-test the full call flow (controller → workflow → activity → core service → repository → Postgres):
+Smoke-test the User-create call flow (controller → core service → repository → Postgres; non-orchestrated POC carve-out per ADR 001):
 
 ```bash
-curl -X POST http://localhost:8081/api/ping \
+curl -X POST http://localhost:8081/api/v1/users \
   -H 'Content-Type: application/json' \
-  -d '{"message": "hello"}'
+  -d '{"email":"a@b.com","role":"CONSUMER","homeRegion":"us-east-1"}'
 ```
 
-Expected response: `{"result":"pong","workflowId":"ping-..."}`. The Temporal UI shows the workflow execution; `select * from ping_log;` in the app Postgres shows a row was written.
+Expected response: `201 Created` with `{"intuitAccountId":"...","email":"a@b.com","role":"CONSUMER","homeRegion":"us-east-1","createdAt":"...","updatedAt":"..."}`. Repeating the same email returns `200 OK` with the same `intuitAccountId` (idempotent). `select * from users;` in the app Postgres shows the row.
 
 ## Local development
 

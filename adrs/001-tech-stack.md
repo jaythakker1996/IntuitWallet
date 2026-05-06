@@ -38,10 +38,14 @@ Allowed dependencies:
 
 Hard rules inside the layers:
 
-- Controllers only start, signal, or query Temporal workflows. They do not call `core` services or repositories directly.
+- Controllers either start/signal/query Temporal workflows (for orchestrated flows) or call `core` services directly (for non-orchestrated operations). Controllers must not call repositories directly — the `service`→`dal` boundary stays intact. The non-orchestrated path is currently a POC carve-out for User CRUD (see ADR 002); revisit before the first production-bound feature.
 - Workflows do not call Spring beans or the database directly. They orchestrate activities.
 - Activities are the only place that injects `core` services.
 - Any state change that affects domain aggregates (e.g. transactions, ledger entries) goes through a Temporal workflow.
+
+Conventions:
+
+- API versioning. HTTP paths are prefixed with `/api/v{N}/`, defaulting to `v1`. Major version bump on breaking changes only; additive changes stay on the current major. Apply uniformly across new endpoints and specs.
 
 ## Consequences
 
@@ -59,6 +63,7 @@ Hard rules inside the layers:
 - **Follow-ups**
   - Once a few features have shipped, evaluate adding ArchUnit tests to enforce the package-dependency rules automatically.
   - Once auth/authorization is needed, add an ADR rather than smuggling decisions into a feature spec.
+  - The Ping scaffolding flow has served its purpose and is removed in favor of the first real domain feature (User, ADR 002). `/actuator/health` is the canonical liveness probe.
 
 ## Alternatives considered
 
@@ -66,3 +71,11 @@ Hard rules inside the layers:
 - **Hexagonal / ports-and-adapters with `domain`, `application`, `infrastructure`.** Rejected as overkill for a service of this size and at odds with the explicit three-package shape requested. We can revisit if `core` business logic outgrows a single package.
 - **Quarkus or Micronaut instead of Spring Boot.** Rejected: Spring Boot has the largest Temporal-integration ecosystem and the team's familiarity is highest there.
 - **Maven instead of Gradle.** Rejected: requested as Gradle (Groovy DSL).
+
+## Amendments
+
+### 2026-05-06 — User domain (ADR 002) prep
+
+- **Hard rules: controller path.** The original "Controllers only start, signal, or query Temporal workflows. They do not call `core` services or repositories directly." was rewritten to allow controllers to call `core` services directly for non-orchestrated operations. The `service`→`dal` boundary remains; controllers still cannot touch repositories. The non-orchestrated path is a **POC carve-out** for User CRUD (ADR 002) — User itself is POC-only (production identity comes from Intuit SSO). Revisit before the first production-bound feature.
+- **Conventions: API versioning.** Added a versioning rule (`/api/v{N}/`, default `v1`) so the first real endpoint and every subsequent spec inherit it without re-deciding.
+- **Follow-ups: Ping removal.** The Ping scaffolding flow served its purpose during bootstrap and is removed alongside this amendment. `/actuator/health` is the canonical liveness probe.

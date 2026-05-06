@@ -1,6 +1,6 @@
 # IntuitWalletService
 
-Spring Boot REST service backed by Temporal workflows and PostgreSQL. The business problem statement is TBD — see `specs/`. Until the first feature spec lands, the only non-infrastructure code is a `Ping` flow that exercises every layer end-to-end.
+Spring Boot REST service backed by Temporal workflows and PostgreSQL. The business problem statement is TBD — see `specs/`. The first real domain is `User` (POC stub) — see ADR 002 and `specs/002-create-user.md`.
 
 ## Stack
 
@@ -27,10 +27,11 @@ client → service (controller + DTO validation)
 ```
 
 Hard rules:
-- `service` must not import `dal`. Controllers only start/signal/query workflows.
+- `service` must not import `dal`. Controllers either start/signal/query workflows (orchestrated flows) or call `core` services directly (non-orchestrated operations); controllers must never call repositories directly. The non-orchestrated path is a POC carve-out for User CRUD — see ADR 001 amendments + ADR 002.
 - `businesslogic` must not import `service`.
 - Workflows must not call Spring beans or the DB directly. Only activities call `core` services.
 - State changes that affect `transactions` or the `ledger` always go through a Temporal workflow.
+- API paths are versioned: `/api/v{N}/...`, default `v1`. Major bump on breaking changes only.
 
 ## Package layout
 
@@ -58,10 +59,12 @@ Follow the call flow bottom-up so each layer has a green build before the next i
 2. If an architectural choice falls out of it, add `adrs/NNN-kebab-name.md`.
 3. **dal**: add a Flyway migration `src/main/resources/db/migration/V<n>__<name>.sql`, the `@Entity`, and the `JpaRepository`.
 4. **businesslogic.core**: add an `@Service` with the rules. Keep it free of Temporal annotations.
-5. **businesslogic.activity**: define the `@ActivityInterface` and an `@ActivityImpl(workers = "wallet-service-worker")` that delegates to the core service.
-6. **businesslogic.workflow**: define the `@WorkflowInterface` and `@WorkflowImpl(workers = "wallet-service-worker")` that orchestrates activities.
-7. **service**: add request/response DTOs and a `@RestController` that submits the workflow via the injected `WorkflowClient`.
-8. Tests: a `TestWorkflowEnvironment`-based unit test for the workflow (see `PingWorkflowTest`), plus repository/service unit tests as needed.
+5. **businesslogic.activity** (orchestrated only): define the `@ActivityInterface` and an `@ActivityImpl(workers = "wallet-service-worker")` that delegates to the core service.
+6. **businesslogic.workflow** (orchestrated only): define the `@WorkflowInterface` and `@WorkflowImpl(workers = "wallet-service-worker")` that orchestrates activities.
+7. **service**: add request/response DTOs and a `@RestController`. For orchestrated features, submit via the injected `WorkflowClient`. For non-orchestrated features (POC carve-out, e.g. User CRUD), inject the `core` `@Service` and call it directly.
+8. Tests: use `TestWorkflowEnvironment` when a workflow is involved; otherwise use `@DataJpaTest` for the core service (see `UserCoreServiceTest`) and `@WebMvcTest` for the controller (see `UserControllerTest`).
+
+Steps 5–6 apply only to features that need orchestration (multi-step, retryable, saga-bearing, or any state change affecting transactions / ledger). Non-orchestrated features skip them.
 
 ## Commands
 
@@ -77,7 +80,7 @@ Follow the call flow bottom-up so each layer has a green build before the next i
 | Reset DB volume | `docker compose down -v` |
 
 Once `docker compose up -d` is running:
-- App: `http://localhost:8081` (e.g. `POST /api/ping {"message":"hi"}`)
+- App: `http://localhost:8081` (e.g. `POST /api/v1/users {"email":"a@b.com","role":"CONSUMER","homeRegion":"us-east-1"}`)
 - Actuator health: `http://localhost:8081/actuator/health`
 - Temporal UI: `http://localhost:8233`
 
