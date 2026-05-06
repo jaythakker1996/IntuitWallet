@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://app-postgres:5432/wallet
+    username: wallet
+    password: ${APP_DB_PASSWORD:wallet}
+  temporal:
+    connection:
+      target: temporal:7233

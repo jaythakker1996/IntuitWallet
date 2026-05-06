@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: intuit-wallet-service
+  datasource:
+    url: ${APP_DB_URL:jdbc:postgresql://localhost:5433/wallet}
+    username: ${APP_DB_USERNAME:wallet}
+    password: ${APP_DB_PASSWORD:wallet}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  temporal:
+    connection:
+      target: ${TEMPORAL_ADDRESS:localhost:7233}
+    namespace: ${TEMPORAL_NAMESPACE:default}
+    workers:
+      - task-queue: wallet-service
+        name: wallet-service-worker
+
+server:
+  port: ${SERVER_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never

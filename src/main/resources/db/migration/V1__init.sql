@@ -1,0 +1,5 @@
+CREATE TABLE ping_log (
+    id BIGSERIAL PRIMARY KEY,
+    message VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
