@@ -1,9 +1,9 @@
 # 004 — Get user
 
-- **Status:** Draft
+- **Status:** Implemented
 - **Author:** IntuitWalletService
 - **Last updated:** 2026-05-06
-- **Implements:** TBD
+- **Implements:** TBD (link added when PR opens)
 - **Related ADRs:** [002-user-domain](../adrs/002-user-domain.md)
 
 ## Problem

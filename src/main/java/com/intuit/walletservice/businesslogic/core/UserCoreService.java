@@ -18,6 +18,13 @@ public class UserCoreService {
         this.userRepository = userRepository;
     }
 
+    @Transactional(readOnly = true)
+    public UserView getUser(UUID intuitAccountId) {
+        return userRepository.findById(intuitAccountId)
+                .map(UserCoreService::toView)
+                .orElseThrow(() -> new UserNotFoundException(intuitAccountId));
+    }
+
     @Transactional
     public CreateUserResult createUser(String email, String role, String homeRegion) {
         Optional<User> existing = userRepository.findByEmailIgnoreCase(email);

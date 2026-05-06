@@ -7,7 +7,10 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
 @Import(UserCoreService.class)
@@ -60,5 +63,29 @@ class UserCoreServiceTest {
         assertThat(second.created()).isFalse();
         assertThat(second.user().intuitAccountId()).isEqualTo(first.user().intuitAccountId());
         assertThat(userRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void getUser_existingId_returnsView() {
+        UserCoreService.CreateUserResult created =
+                userCoreService.createUser("alice@example.com", "CONSUMER", "us-east-1");
+
+        UserView view = userCoreService.getUser(created.user().intuitAccountId());
+
+        assertThat(view.intuitAccountId()).isEqualTo(created.user().intuitAccountId());
+        assertThat(view.email()).isEqualTo("alice@example.com");
+        assertThat(view.role()).isEqualTo("CONSUMER");
+        assertThat(view.homeRegion()).isEqualTo("us-east-1");
+        assertThat(view.createdAt()).isEqualTo(created.user().createdAt());
+        assertThat(view.updatedAt()).isEqualTo(created.user().updatedAt());
+    }
+
+    @Test
+    void getUser_unknownId_throwsUserNotFoundException() {
+        UUID unknown = UUID.randomUUID();
+
+        assertThatThrownBy(() -> userCoreService.getUser(unknown))
+                .isInstanceOf(UserNotFoundException.class)
+                .hasMessageContaining(unknown.toString());
     }
 }
