@@ -9,6 +9,8 @@ import com.intuit.walletservice.service.dto.CreateWalletRequest;
 import com.intuit.walletservice.service.dto.WalletBalanceResponse;
 import com.intuit.walletservice.service.dto.WalletBalancesResponse;
 import com.intuit.walletservice.service.dto.WalletResponse;
+import com.intuit.walletservice.service.dto.WalletTransactionResponse;
+import com.intuit.walletservice.service.dto.WalletTransactionsResponse;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowFailedException;
 import io.temporal.client.WorkflowOptions;
@@ -82,6 +84,19 @@ public class WalletController {
             @PathVariable UUID walletId, @PathVariable String stablecoin) {
         walletCoreService.getById(walletId);
         return WalletBalanceResponse.from(ledgerCoreService.getBalance(walletId, stablecoin));
+    }
+
+    @GetMapping("/{walletId}/transactions")
+    public WalletTransactionsResponse getTransactions(@PathVariable UUID walletId) {
+        walletCoreService.getById(walletId);
+        return WalletTransactionsResponse.from(walletId, ledgerCoreService.getTransactionsForWallet(walletId));
+    }
+
+    @GetMapping("/{walletId}/transactions/{txId}")
+    public WalletTransactionResponse getTransaction(
+            @PathVariable UUID walletId, @PathVariable UUID txId) {
+        walletCoreService.getById(walletId);
+        return WalletTransactionResponse.from(ledgerCoreService.getTransactionForWallet(walletId, txId));
     }
 
     private static void translateWorkflowFailure(WorkflowFailedException ex, UUID intuitAccountId) {

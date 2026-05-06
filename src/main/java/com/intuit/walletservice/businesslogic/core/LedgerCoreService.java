@@ -9,13 +9,17 @@ import com.intuit.walletservice.dal.repository.TransactionRepository;
 import com.intuit.walletservice.dal.repository.WalletRepository;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class LedgerCoreService {
@@ -30,6 +34,11 @@ public class LedgerCoreService {
     static final String STATUS_COMPLETED = "COMPLETED";
     static final String ENTRY_TYPE_DEBIT = "DEBIT";
     static final String ENTRY_TYPE_CREDIT = "CREDIT";
+
+    static final String DIRECTION_OUTBOUND = "OUTBOUND";
+    static final String DIRECTION_INBOUND = "INBOUND";
+
+    static final int TRANSACTION_LIST_LIMIT = 100;
 
     static final String CONSTRAINT_TX_IDEMPOTENCY = "idx_tx_idempotency";
     static final String CONSTRAINT_LEDGER_SEQ = "idx_ledger_seq";
@@ -73,6 +82,59 @@ public class LedgerCoreService {
                 entry.getRunningPending(),
                 entry.getEntrySequence(),
                 entry.getCreatedAt());
+    }
+
+    @Transactional(readOnly = true)
+    public List<WalletTransactionView> getTransactionsForWallet(UUID walletId) {
+        List<Transaction> txs = transactionRepository.findForWallet(
+                walletId.toString(), PageRequest.of(0, TRANSACTION_LIST_LIMIT));
+        if (txs.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> txIds = txs.stream().map(Transaction::getTxId).toList();
+        Map<UUID, LedgerEntry> entriesByTx = ledgerEntryRepository
+                .findByWalletIdAndTxIdIn(walletId, txIds)
+                .stream()
+                .collect(Collectors.toMap(LedgerEntry::getTxId, Function.identity()));
+        return txs.stream()
+                .map(tx -> toWalletTransactionView(tx, walletId, entriesByTx.get(tx.getTxId())))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public WalletTransactionView getTransactionForWallet(UUID walletId, UUID txId) {
+        Transaction tx = transactionRepository.findByTxIdAndWallet(txId, walletId.toString())
+                .orElseThrow(() -> new TransactionNotFoundException(
+                        "Transaction not found for wallet " + walletId + ": " + txId));
+        LedgerEntry entry = ledgerEntryRepository.findByTxIdAndWalletId(txId, walletId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Ledger entry missing for tx " + txId + " on wallet " + walletId));
+        return toWalletTransactionView(tx, walletId, entry);
+    }
+
+    private static WalletTransactionView toWalletTransactionView(
+            Transaction tx, UUID walletId, LedgerEntry entry) {
+        if (entry == null) {
+            throw new IllegalStateException(
+                    "Ledger entry missing for tx " + tx.getTxId() + " on wallet " + walletId);
+        }
+        boolean outbound = tx.getFromParty().equals(walletId.toString());
+        String direction = outbound ? DIRECTION_OUTBOUND : DIRECTION_INBOUND;
+        return new WalletTransactionView(
+                tx.getTxId(),
+                tx.getType(),
+                direction,
+                entry.getEntryType(),
+                UUID.fromString(tx.getFromParty()),
+                UUID.fromString(tx.getToParty()),
+                tx.getAmount(),
+                tx.getStablecoin(),
+                tx.getFee(),
+                tx.getStatus(),
+                entry.getRunningAvailable(),
+                entry.getRunningPending(),
+                entry.getEntrySequence(),
+                tx.getCreatedAt());
     }
 
     @Transactional(readOnly = true)

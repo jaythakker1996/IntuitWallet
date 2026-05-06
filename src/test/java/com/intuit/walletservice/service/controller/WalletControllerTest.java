@@ -2,11 +2,13 @@ package com.intuit.walletservice.service.controller;
 
 import com.intuit.walletservice.businesslogic.core.LedgerCoreService;
 import com.intuit.walletservice.businesslogic.core.StablecoinBalanceNotFoundException;
+import com.intuit.walletservice.businesslogic.core.TransactionNotFoundException;
 import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
 import com.intuit.walletservice.businesslogic.core.WalletBalanceView;
 import com.intuit.walletservice.businesslogic.core.WalletCoreService;
 import com.intuit.walletservice.businesslogic.core.WalletCoreService.CreateWalletResult;
 import com.intuit.walletservice.businesslogic.core.WalletNotFoundException;
+import com.intuit.walletservice.businesslogic.core.WalletTransactionView;
 import com.intuit.walletservice.businesslogic.core.WalletView;
 import com.intuit.walletservice.businesslogic.workflow.CreateWalletWorkflow;
 import io.temporal.client.WorkflowClient;
@@ -288,6 +290,133 @@ class WalletControllerTest {
     @Test
     void getBalance_malformedUuid_returns400() throws Exception {
         mockMvc.perform(get("/api/v1/wallets/not-a-uuid/balances/USDC"))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ===== transactions (spec/009) =====
+
+    @Test
+    void getTransactions_existing_returns200WithList() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID counterparty = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(ledgerCoreService.getTransactionsForWallet(eq(walletId))).thenReturn(List.of(
+                new WalletTransactionView(
+                        UUID.randomUUID(), "SEND", "OUTBOUND", "DEBIT",
+                        walletId, counterparty,
+                        new BigDecimal("10.50"), "USDC", BigDecimal.ZERO, "COMPLETED",
+                        new BigDecimal("89.50"), BigDecimal.ZERO, 2L, now),
+                new WalletTransactionView(
+                        UUID.randomUUID(), "FUND", "INBOUND", "CREDIT",
+                        UUID.fromString("00000000-0000-0000-0000-00000000ed01"), walletId,
+                        new BigDecimal("100.00"), "USDC", BigDecimal.ZERO, "COMPLETED",
+                        new BigDecimal("100.00"), BigDecimal.ZERO, 1L, now)));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/transactions", walletId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.walletId").value(walletId.toString()))
+                .andExpect(jsonPath("$.transactions.length()").value(2))
+                .andExpect(jsonPath("$.transactions[0].type").value("SEND"))
+                .andExpect(jsonPath("$.transactions[0].direction").value("OUTBOUND"))
+                .andExpect(jsonPath("$.transactions[0].entryType").value("DEBIT"))
+                .andExpect(jsonPath("$.transactions[0].runningAvailableAfter").value(89.50))
+                .andExpect(jsonPath("$.transactions[1].type").value("FUND"))
+                .andExpect(jsonPath("$.transactions[1].direction").value("INBOUND"))
+                .andExpect(jsonPath("$.transactions[1].entryType").value("CREDIT"));
+    }
+
+    @Test
+    void getTransactions_emptyHistory_returns200WithEmptyList() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(ledgerCoreService.getTransactionsForWallet(eq(walletId))).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/transactions", walletId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.walletId").value(walletId.toString()))
+                .andExpect(jsonPath("$.transactions.length()").value(0));
+    }
+
+    @Test
+    void getTransactions_unknownWallet_returns404WithWalletNotFound() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        when(walletCoreService.getById(eq(walletId)))
+                .thenThrow(new WalletNotFoundException("Wallet not found: " + walletId));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/transactions", walletId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("WALLET_NOT_FOUND"));
+    }
+
+    @Test
+    void getTransactions_malformedUuid_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/wallets/not-a-uuid/transactions"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getTransaction_existingForWallet_returns200() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID counterparty = UUID.randomUUID();
+        UUID txId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(ledgerCoreService.getTransactionForWallet(eq(walletId), eq(txId))).thenReturn(
+                new WalletTransactionView(
+                        txId, "SEND", "OUTBOUND", "DEBIT",
+                        walletId, counterparty,
+                        new BigDecimal("10.50"), "USDC", BigDecimal.ZERO, "COMPLETED",
+                        new BigDecimal("89.50"), BigDecimal.ZERO, 2L, now));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/transactions/{txId}", walletId, txId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.txId").value(txId.toString()))
+                .andExpect(jsonPath("$.direction").value("OUTBOUND"))
+                .andExpect(jsonPath("$.entryType").value("DEBIT"))
+                .andExpect(jsonPath("$.runningAvailableAfter").value(89.50));
+    }
+
+    @Test
+    void getTransaction_unknownTxId_returns404WithTransactionNotFound() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID txId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(ledgerCoreService.getTransactionForWallet(eq(walletId), eq(txId)))
+                .thenThrow(new TransactionNotFoundException(
+                        "Transaction not found for wallet " + walletId + ": " + txId));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/transactions/{txId}", walletId, txId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("TRANSACTION_NOT_FOUND"));
+    }
+
+    @Test
+    void getTransaction_unknownWallet_returns404WithWalletNotFound() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID txId = UUID.randomUUID();
+        when(walletCoreService.getById(eq(walletId)))
+                .thenThrow(new WalletNotFoundException("Wallet not found: " + walletId));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/transactions/{txId}", walletId, txId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("WALLET_NOT_FOUND"));
+    }
+
+    @Test
+    void getTransaction_malformedTxId_returns400() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        mockMvc.perform(get("/api/v1/wallets/{id}/transactions/not-a-uuid", walletId))
                 .andExpect(status().isBadRequest());
     }
 

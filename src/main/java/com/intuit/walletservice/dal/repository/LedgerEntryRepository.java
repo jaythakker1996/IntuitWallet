@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,4 +24,8 @@ public interface LedgerEntryRepository extends JpaRepository<LedgerEntry, UUID> 
             ORDER BY le.stablecoin
             """)
     List<LedgerEntry> findLatestEntriesForWallet(@Param("walletId") UUID walletId);
+
+    Optional<LedgerEntry> findByTxIdAndWalletId(UUID txId, UUID walletId);
+
+    List<LedgerEntry> findByWalletIdAndTxIdIn(UUID walletId, Collection<UUID> txIds);
 }

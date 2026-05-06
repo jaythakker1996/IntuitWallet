@@ -1,6 +1,7 @@
 package com.intuit.walletservice.businesslogic.core;
 
 import com.intuit.walletservice.dal.entity.LedgerEntry;
+import com.intuit.walletservice.dal.entity.Transaction;
 import com.intuit.walletservice.dal.entity.Wallet;
 import com.intuit.walletservice.dal.repository.LedgerEntryRepository;
 import com.intuit.walletservice.dal.repository.TransactionRepository;
@@ -13,6 +14,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -271,6 +273,112 @@ class LedgerCoreServiceTest {
         assertThat(balances).hasSize(1);
         assertThat(balances.get(0).stablecoin()).isEqualTo(STABLECOIN);
         assertThat(balances.get(0).runningAvailable()).isEqualByComparingTo("0");
+    }
+
+    // ===== getTransactionsForWallet / getTransactionForWallet (spec/009) =====
+
+    @Test
+    void getTransactionsForWallet_returnsBothInboundAndOutbound() {
+        // Fund alice (alice INBOUND), then alice sends to bob (alice OUTBOUND).
+        ledgerCoreService.executeTransfer(req("FUND", systemDeposits, alice, "100.00", "fund-1"));
+        ledgerCoreService.executeTransfer(req("SEND", alice, bob, "10.00", "send-1"));
+
+        List<WalletTransactionView> aliceTxs = ledgerCoreService.getTransactionsForWallet(alice);
+
+        assertThat(aliceTxs).hasSize(2);
+        // Newest first: SEND, then FUND.
+        assertThat(aliceTxs.get(0).type()).isEqualTo("SEND");
+        assertThat(aliceTxs.get(0).direction()).isEqualTo("OUTBOUND");
+        assertThat(aliceTxs.get(0).entryType()).isEqualTo("DEBIT");
+        assertThat(aliceTxs.get(0).runningAvailableAfter()).isEqualByComparingTo("90.00");
+        assertThat(aliceTxs.get(1).type()).isEqualTo("FUND");
+        assertThat(aliceTxs.get(1).direction()).isEqualTo("INBOUND");
+        assertThat(aliceTxs.get(1).entryType()).isEqualTo("CREDIT");
+        assertThat(aliceTxs.get(1).runningAvailableAfter()).isEqualByComparingTo("100.00");
+
+        List<WalletTransactionView> bobTxs = ledgerCoreService.getTransactionsForWallet(bob);
+        assertThat(bobTxs).hasSize(1);
+        assertThat(bobTxs.get(0).direction()).isEqualTo("INBOUND");
+        assertThat(bobTxs.get(0).entryType()).isEqualTo("CREDIT");
+        assertThat(bobTxs.get(0).runningAvailableAfter()).isEqualByComparingTo("10.00");
+    }
+
+    @Test
+    void getTransactionsForWallet_emptyHistory_returnsEmptyList() {
+        assertThat(ledgerCoreService.getTransactionsForWallet(alice)).isEmpty();
+    }
+
+    @Test
+    void getTransactionsForWallet_capsAt100() throws Exception {
+        // Bypass executeTransfer: write 105 (tx, ledgerEntry) pairs directly with monotonically
+        // increasing createdAt so DESC sort is deterministic.
+        OffsetDateTime base = OffsetDateTime.parse("2026-05-06T00:00:00Z");
+        for (int i = 0; i < 105; i++) {
+            UUID txId = UUID.randomUUID();
+            Transaction tx = new Transaction(
+                    txId, "SEND", "WALLET", alice.toString(), "WALLET", bob.toString(),
+                    STABLECOIN, new BigDecimal("1.00"), BigDecimal.ZERO, "COMPLETED",
+                    "key-" + i, "hash-" + i);
+            setCreatedAt(tx, base.plusSeconds(i));
+            transactionRepository.save(tx);
+
+            ledgerEntryRepository.save(new LedgerEntry(
+                    UUID.randomUUID(), txId, alice, STABLECOIN, "DEBIT",
+                    new BigDecimal("1.00"), new BigDecimal("100.00").subtract(BigDecimal.valueOf(i)),
+                    BigDecimal.ZERO, i + 1L));
+        }
+
+        List<WalletTransactionView> txs = ledgerCoreService.getTransactionsForWallet(alice);
+
+        assertThat(txs).hasSize(100);
+    }
+
+    @Test
+    void getTransactionForWallet_existing_returnsView() {
+        ledgerCoreService.executeTransfer(req("FUND", systemDeposits, alice, "100.00", "fund-1"));
+        ExecuteTransferResult send = ledgerCoreService.executeTransfer(
+                req("SEND", alice, bob, "10.00", "send-1"));
+        UUID txId = send.transaction().txId();
+
+        WalletTransactionView aliceView = ledgerCoreService.getTransactionForWallet(alice, txId);
+        WalletTransactionView bobView = ledgerCoreService.getTransactionForWallet(bob, txId);
+
+        assertThat(aliceView.txId()).isEqualTo(txId);
+        assertThat(aliceView.direction()).isEqualTo("OUTBOUND");
+        assertThat(aliceView.entryType()).isEqualTo("DEBIT");
+        assertThat(bobView.txId()).isEqualTo(txId);
+        assertThat(bobView.direction()).isEqualTo("INBOUND");
+        assertThat(bobView.entryType()).isEqualTo("CREDIT");
+    }
+
+    @Test
+    void getTransactionForWallet_unknownTxId_throws() {
+        UUID unknown = UUID.randomUUID();
+        assertThatThrownBy(() -> ledgerCoreService.getTransactionForWallet(alice, unknown))
+                .isInstanceOf(TransactionNotFoundException.class)
+                .hasMessageContaining(unknown.toString())
+                .hasMessageContaining(alice.toString());
+    }
+
+    @Test
+    void getTransactionForWallet_existsButNotForThisWallet_throws() {
+        // Create a tx between alice and bob; query as a third unrelated wallet.
+        ledgerCoreService.executeTransfer(req("FUND", systemDeposits, alice, "100.00", "fund-1"));
+        ExecuteTransferResult send = ledgerCoreService.executeTransfer(
+                req("SEND", alice, bob, "10.00", "send-1"));
+        UUID txId = send.transaction().txId();
+
+        UUID charlie = UUID.randomUUID();
+        walletRepository.save(new Wallet(charlie, UUID.randomUUID(), "USER", "ACTIVE"));
+
+        assertThatThrownBy(() -> ledgerCoreService.getTransactionForWallet(charlie, txId))
+                .isInstanceOf(TransactionNotFoundException.class);
+    }
+
+    private static void setCreatedAt(Transaction tx, OffsetDateTime when) throws Exception {
+        java.lang.reflect.Field f = Transaction.class.getDeclaredField("createdAt");
+        f.setAccessible(true);
+        f.set(tx, when);
     }
 
     private void seedBalanceFor(UUID walletId, String stablecoin, String available, long sequence) {
