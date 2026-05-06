@@ -119,6 +119,8 @@ CREATE INDEX idx_ledger_tx
 
 Append-only. **No `UPDATE`, no `DELETE`** — enforced by code review for the POC; a Postgres trigger raising on `UPDATE` / `DELETE` lands when the first non-POC feature ships.
 
+**Amendment (spec/007):** the `CHECK (running_available >= 0)` constraint above was dropped in V3. The original rationale (defense-in-depth against debiting below zero) breaks SYSTEM-wallet semantics — `external_deposits` and friends accumulate DEBITs as money flows in from outside Intuit, so their `running_available` is expected to run negative over time. The non-negative invariant for USER wallets is now enforced in `LedgerCoreService.executeTransfer` before each debit; SYSTEM senders skip the balance check entirely. Postgres `CHECK` can't subquery `wallets.type`, so a row-conditional constraint isn't natively expressible without denormalizing `wallet_type` into `ledger_entries`, which we judged not worth the cost.
+
 Field rules:
 
 - `entry_id` — UUIDv7, generated in the activity. Same time-ordering rationale as `tx_id`.

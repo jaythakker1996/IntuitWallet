@@ -37,6 +37,9 @@ dependencies {
 
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
 
+    // UUIDv7 generator: time-ordered IDs for tx_id and entry_id (spec/007, ADR 004 §3).
+    implementation 'com.fasterxml.uuid:java-uuid-generator:5.1.0'
+
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation "io.temporal:temporal-testing:${temporalVersion}"
     testImplementation "org.testcontainers:junit-jupiter:${testcontainersVersion}"

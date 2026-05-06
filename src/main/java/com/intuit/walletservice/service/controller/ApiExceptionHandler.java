@@ -1,6 +1,9 @@
 package com.intuit.walletservice.service.controller;
 
+import com.intuit.walletservice.businesslogic.core.IdempotencyConflictException;
+import com.intuit.walletservice.businesslogic.core.InsufficientBalanceException;
 import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
+import com.intuit.walletservice.businesslogic.core.WalletNotActiveException;
 import com.intuit.walletservice.businesslogic.core.WalletNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +24,30 @@ public class ApiExceptionHandler {
     @ExceptionHandler(WalletNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleWalletNotFound(WalletNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(WalletNotActiveException.class)
+    public ResponseEntity<Map<String, String>> handleWalletNotActive(WalletNotActiveException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InsufficientBalanceException.class)
+    public ResponseEntity<Map<String, String>> handleInsufficientBalance(InsufficientBalanceException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(Map.of("error", "INSUFFICIENT_BALANCE", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<Map<String, String>> handleIdempotencyConflict(IdempotencyConflictException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(Map.of("error", "IDEMPOTENCY_CONFLICT", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("error", ex.getMessage()));
     }
 }
