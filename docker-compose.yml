@@ -75,6 +75,20 @@ services:
     networks:
       - wallet-net
 
+  pgweb:
+    image: sosedoff/pgweb:0.16.2
+    container_name: wallet-pgweb
+    restart: unless-stopped
+    depends_on:
+      app-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://wallet:${APP_DB_PASSWORD:-wallet}@app-postgres:5432/wallet?sslmode=disable
+    ports:
+      - "8082:8081"
+    networks:
+      - wallet-net
+
 networks:
   wallet-net:
     name: wallet-net

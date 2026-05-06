@@ -82,7 +82,9 @@ Steps 5–6 apply only to features that need orchestration (multi-step, retryabl
 Once `docker compose up -d` is running:
 - App: `http://localhost:8081` (e.g. `POST /api/v1/users {"email":"a@b.com","role":"CONSUMER","homeRegion":"us-east-1"}`)
 - Actuator health: `http://localhost:8081/actuator/health`
+- Swagger UI: `http://localhost:8081/swagger-ui/index.html`
 - Temporal UI: `http://localhost:8233`
+- DB UI (pgweb): `http://localhost:8082`
 
 ## Conventions
 

@@ -19,7 +19,9 @@ Once everything is healthy:
 | --- | --- |
 | App | http://localhost:8081 |
 | Health | http://localhost:8081/actuator/health |
+| Swagger UI | http://localhost:8081/swagger-ui/index.html |
 | Temporal UI | http://localhost:8233 |
+| DB UI (pgweb) | http://localhost:8082 |
 | App Postgres | `localhost:5433` (db `wallet`, user `wallet`, password from `.env`) |
 
 Smoke-test the User-create call flow (controller → core service → repository → Postgres; non-orchestrated POC carve-out per ADR 001):

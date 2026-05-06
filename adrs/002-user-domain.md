@@ -16,7 +16,7 @@ Schema scope is intentionally narrow for the POC: identity + role + home region 
 
 ### 1. User CRUD bypasses workflows (POC carve-out)
 
-Per the ADR 001 amendment that introduces the controller→core path for non-orchestrated flows, the three user APIs go:
+Per the ADR 001 amendment that introduces the controller→core path for non-orchestrated flows, the two user APIs go:
 
 ```
 controller → core → repository → DB
@@ -24,9 +24,10 @@ controller → core → repository → DB
 
 No Temporal workflow, no activity. The endpoints are:
 
-- `POST /api/v1/users`
-- `PATCH /api/v1/users/{intuitAccountId}`
-- `GET /api/v1/users/{intuitAccountId}`
+- `POST /api/v1/users` (spec 002)
+- `GET /api/v1/users/{intuitAccountId}` (spec 004)
+
+An Update API was originally drafted as spec 003 and has been removed; if mutation is needed later, it returns as a new spec with its own decision on workflow vs. direct call.
 
 Workflows remain mandatory for ledger / transaction state changes and any other multi-step, retryable, or saga-bearing flow. User CRUD has none of those properties — orchestration overhead would be pure cost. The strict controller→workflow rule reasserts as the default once User leaves this service.
 
@@ -55,7 +56,7 @@ Field rules:
 - `role` — one of `CONSUMER` / `MERCHANT` / `CONTRACTOR`. No default; caller specifies. Locked at creation time for now (an admin-only mutation flow comes later).
 - `home_region` — required. CHECK is intentionally omitted so adding regions doesn't require a schema migration.
 - `created_at` — DB default, never updated by application code.
-- `updated_at` — DB default on insert; explicitly bumped to `now()` by `UserCoreService` on every update path. Useful audit signal even before a dedicated audit log lands.
+- `updated_at` — DB default on insert. With the Update API deferred (no spec 003), `updated_at` always equals `created_at` on insert; nothing in the current code path mutates it. Column stays in the schema for forward compatibility — when an Update spec returns, `UserCoreService` will bump it and no migration is needed.
 
 ### 3. KYC is future scope
 
