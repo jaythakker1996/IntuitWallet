@@ -34,13 +34,25 @@ curl -X POST http://localhost:8081/api/v1/users \
 
 Expected response: `201 Created` with `{"intuitAccountId":"...","email":"a@b.com","role":"CONSUMER","homeRegion":"us-east-1","createdAt":"...","updatedAt":"..."}`. Repeating the same email returns `200 OK` with the same `intuitAccountId` (idempotent). `select * from users;` in the app Postgres shows the row.
 
-## Local development
+## Build and test
 
-```bash
-./gradlew test       # unit tests (uses H2 + Temporal in-process server)
-./gradlew bootRun    # run against an already-running docker compose stack
-./gradlew build      # full build incl. tests + bootJar
-```
+Run from the repo root. JDK 21 is required; the Gradle wrapper handles everything else.
+
+| Task | Command | What it does |
+| --- | --- | --- |
+| Compile | `./gradlew compileJava` | Compiles `src/main/java` only. Fastest feedback loop. |
+| Run unit tests | `./gradlew test` | Runs the full JUnit 5 suite against H2 + Temporal's `TestWorkflowEnvironment`. No Docker required. |
+| Build (compile + test + jar) | `./gradlew build` | Full build: compile, run tests, produce `build/libs/*.jar`. This is what CI runs. |
+| Run locally | `./gradlew bootRun` | Boots the app against an already-running Docker stack (Postgres on `:5433`, Temporal on `:7233`). |
+| Clean | `./gradlew clean` | Wipes `build/` (use if a stale class file is causing confusion). |
+
+Tests are intentionally split by what they exercise:
+
+- **`@DataJpaTest`** for `core` services — H2 in-memory, real JPA, no Spring web stack (`UserCoreServiceTest`, `WalletCoreServiceTest`).
+- **`TestWorkflowEnvironment`** for workflows — in-process Temporal test server with mocked activities (`CreateWalletWorkflowTest`).
+- **`@WebMvcTest`** for controllers — MockMvc with mocked `WorkflowClient` / core services (`UserControllerTest`, `WalletControllerTest`).
+
+Full HTTP-through-DB integration is verified by `docker compose up -d --build` and curl, not by an in-JVM Spring Boot integration test (the `@WorkflowImpl` auto-discovery doesn't co-operate cleanly with the in-process test server in this starter version).
 
 `bootRun` expects Postgres on `localhost:5433` and Temporal on `localhost:7233`; the simplest way to get both is `docker compose up -d app-postgres temporal temporal-postgres temporal-ui`.
 
