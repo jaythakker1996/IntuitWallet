@@ -1,0 +1,75 @@
+package com.intuit.walletservice.service.controller;
+
+import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
+import com.intuit.walletservice.businesslogic.core.WalletCoreService;
+import com.intuit.walletservice.businesslogic.core.WalletCoreService.CreateWalletResult;
+import com.intuit.walletservice.businesslogic.workflow.CreateWalletWorkflow;
+import com.intuit.walletservice.service.dto.CreateWalletRequest;
+import com.intuit.walletservice.service.dto.WalletResponse;
+import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowFailedException;
+import io.temporal.client.WorkflowOptions;
+import io.temporal.failure.ApplicationFailure;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/wallets")
+public class WalletController {
+
+    private final WorkflowClient workflowClient;
+    private final WalletCoreService walletCoreService;
+
+    public WalletController(WorkflowClient workflowClient, WalletCoreService walletCoreService) {
+        this.workflowClient = workflowClient;
+        this.walletCoreService = walletCoreService;
+    }
+
+    @PostMapping
+    public ResponseEntity<WalletResponse> create(@Valid @RequestBody CreateWalletRequest request) {
+        WorkflowOptions options = WorkflowOptions.newBuilder()
+                .setTaskQueue(CreateWalletWorkflow.TASK_QUEUE)
+                .setWorkflowId("create-wallet-" + request.intuitAccountId() + "-" + UUID.randomUUID())
+                .build();
+        CreateWalletWorkflow workflow = workflowClient.newWorkflowStub(CreateWalletWorkflow.class, options);
+        try {
+            CreateWalletResult result = workflow.createWallet(request.intuitAccountId());
+            HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+            return ResponseEntity.status(status).body(WalletResponse.from(result.wallet()));
+        } catch (WorkflowFailedException ex) {
+            translateWorkflowFailure(ex, request.intuitAccountId());
+            throw ex;
+        }
+    }
+
+    @GetMapping("/{walletId}")
+    public WalletResponse getById(@PathVariable UUID walletId) {
+        return WalletResponse.from(walletCoreService.getById(walletId));
+    }
+
+    @GetMapping(params = "intuitAccountId")
+    public WalletResponse getByIntuitAccountId(@RequestParam UUID intuitAccountId) {
+        return WalletResponse.from(walletCoreService.getByIntuitAccountId(intuitAccountId));
+    }
+
+    private static void translateWorkflowFailure(WorkflowFailedException ex, UUID intuitAccountId) {
+        Throwable cause = ex.getCause();
+        while (cause != null) {
+            if (cause instanceof ApplicationFailure af
+                    && UserNotFoundException.class.getName().equals(af.getType())) {
+                throw new UserNotFoundException(intuitAccountId);
+            }
+            cause = cause.getCause();
+        }
+    }
+}
