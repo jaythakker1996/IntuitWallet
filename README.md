@@ -34,6 +34,7 @@ Once everything is healthy:
 
 | What | Where |
 | --- | --- |
+| Frontend | http://localhost:5173 |
 | App | http://localhost:8081 |
 | Health | http://localhost:8081/actuator/health |
 | Swagger UI | http://localhost:8081/swagger-ui/index.html |
@@ -87,9 +88,11 @@ Full HTTP-through-DB integration is verified by `cd docker && docker compose up 
 
 `bootRun` expects Postgres on `localhost:5433` and Temporal on `localhost:7233`; the simplest way to get the dependencies up without the app is `cd docker && docker compose up -d app-postgres temporal temporal-postgres temporal-ui pgweb`.
 
-## Frontend (POC, scaffold pending)
+## Frontend
 
-The frontend will live under `frontend/` once the first frontend spec lands (ADR 005 → `010-frontend-scaffold-and-login.md`). When that PR is merged:
+The React app lives under `frontend/`. It's part of the Docker stack — `cd docker && docker compose up -d --build` brings it up alongside the backend on `http://localhost:5173`. CORS on the backend allows the `:5173` origin.
+
+For active frontend development you can also run it natively (faster HMR, ~50ms vs ~200ms in Docker):
 
 ```bash
 cd frontend
@@ -97,9 +100,9 @@ npm install
 npm run dev
 ```
 
-…serves on `http://localhost:5173`. It talks directly to the backend on `:8081`; a small CORS config on the backend allows the dev origin (POC-scoped, replaced when auth lands).
+Stop the Docker frontend service first (`docker compose stop frontend`) so the two don't fight for port 5173.
 
-Until that spec lands, this directory is empty.
+The Vite dev server inside Docker uses polling for file watching (`CHOKIDAR_USEPOLLING=true`). Source files are bind-mounted into the container so edits trigger HMR without a rebuild; `node_modules` stays inside the image. For a full re-install (e.g. after editing `package.json`), `docker compose up -d --build frontend`.
 
 ## Where to look
 

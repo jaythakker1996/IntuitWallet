@@ -112,15 +112,16 @@ All Gradle commands run from `backend/`. All docker-compose commands run from `d
 | Tail app logs | `cd docker && docker compose logs -f app` |
 | Stop full stack | `cd docker && docker compose down` |
 | Reset DB volume | `cd docker && docker compose down -v` |
-| Run frontend dev server (when scaffolded) | `cd frontend && npm run dev` |
+| Run frontend dev server natively (faster HMR) | `cd frontend && npm run dev` |
+| Re-build just the frontend image | `cd docker && docker compose up -d --build frontend` |
 
 Once `cd docker && docker compose up -d` is running:
+- Frontend: `http://localhost:5173`
 - App: `http://localhost:8081` (e.g. `POST /api/v1/users {"email":"a@b.com","role":"CONSUMER","homeRegion":"us-east-1"}`)
 - Actuator health: `http://localhost:8081/actuator/health`
 - Swagger UI: `http://localhost:8081/swagger-ui/index.html`
 - Temporal UI: `http://localhost:8233`
 - DB UI (pgweb): `http://localhost:8082`
-- Frontend dev (when scaffolded, started separately): `http://localhost:5173`
 
 ## Conventions
 

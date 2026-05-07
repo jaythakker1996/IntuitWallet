@@ -1,0 +1,16 @@
+FROM node:22-alpine
+WORKDIR /app
+
+# Install deps separately so Docker caches the layer when only source changes.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Source is mounted as a volume in docker-compose for HMR; this COPY is the
+# fallback for `docker run` without volumes.
+COPY . .
+
+EXPOSE 5173
+
+# --host 0.0.0.0 so Vite binds to all interfaces inside the container,
+# not just localhost (which wouldn't be reachable from the host).
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

@@ -91,6 +91,27 @@ services:
     networks:
       - wallet-net
 
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.dev
+    container_name: wallet-frontend
+    depends_on:
+      - app
+    environment:
+      # Vite/chokidar polling for reliable file-watching across Linux/macOS hosts.
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      # Mount source for HMR. node_modules stays in the image (not mounted).
+      - ../frontend/src:/app/src
+      - ../frontend/index.html:/app/index.html
+      - ../frontend/vite.config.ts:/app/vite.config.ts
+      - ../frontend/tsconfig.json:/app/tsconfig.json
+      - ../frontend/tsconfig.node.json:/app/tsconfig.node.json
+
 networks:
   wallet-net:
     name: wallet-net
