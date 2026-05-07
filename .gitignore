@@ -1,20 +1,28 @@
+# Backend (Gradle / JVM)
 .gradle/
 build/
 out/
 bin/
 
+# Frontend (Vite / npm)
+node_modules/
+dist/
+.vite/
+
+# IDE
 .idea/
 *.iml
 *.iws
 *.ipr
-
 .vscode/
 .settings/
 .classpath
 .project
 
+# Env (any directory)
 .env
 .env.local
 
+# Misc
 *.log
 HELP.md

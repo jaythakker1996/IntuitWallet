@@ -1,6 +1,21 @@
 # IntuitWalletService
 
-Spring Boot REST service backed by Temporal workflows and PostgreSQL. The business problem statement is TBD — see `specs/`. The first real domain is `User` (POC stub) — see ADR 002 and `specs/002-create-user.md`.
+Spring Boot REST service backed by Temporal workflows and PostgreSQL, plus a small React frontend. The business problem statement is TBD — see `specs/`. The first real backend domain is `User` (POC stub) — see ADR 002 and `specs/002-create-user.md`. The frontend POC architecture is in ADR 005.
+
+## Repository layout
+
+```
+.
+├── adrs/         cross-cutting architectural decisions (FE + BE)
+├── specs/        feature specs (FE + BE)
+├── backend/      Spring Boot service — Gradle root
+├── frontend/     React + Vite app — npm root
+├── docker/       docker-compose.yml + Dockerfiles for the full local stack
+├── CLAUDE.md
+└── README.md
+```
+
+Per ADR 005, `backend/` and `frontend/` are peers; `docker/` holds infrastructure; `adrs/` and `specs/` stay at root because they cross-cut both sides.
 
 ## Stack
 
@@ -33,7 +48,9 @@ Hard rules:
 - State changes that affect `transactions` or the `ledger` always go through a Temporal workflow.
 - API paths are versioned: `/api/v{N}/...`, default `v1`. Major bump on breaking changes only.
 
-## Package layout
+## Backend package layout
+
+Under `backend/src/main/java/`:
 
 ```
 com.intuit.walletservice
@@ -51,13 +68,28 @@ com.intuit.walletservice
     └── repository   (Spring Data JpaRepository interfaces)
 ```
 
+## Frontend layout
+
+Under `frontend/src/` (when scaffolded — see ADR 005):
+
+```
+src/
+├── main.tsx          ReactDOM entry
+├── App.tsx           root layout: nav + <Routes>
+├── api/              one file per backend resource (users, wallets, payments)
+├── types/api.ts      hand-written TS interfaces matching Java DTOs
+├── pages/            one file per route
+├── components/       hand-rolled primitives (Field, Button, ErrorBox, ...)
+└── index.css         single global stylesheet
+```
+
 ## Implementing a new feature
 
 Follow the call flow bottom-up so each layer has a green build before the next is added:
 
 1. Write the spec at `specs/NNN-kebab-name.md`.
 2. If an architectural choice falls out of it, add `adrs/NNN-kebab-name.md`.
-3. **dal**: add a Flyway migration `src/main/resources/db/migration/V<n>__<name>.sql`, the `@Entity`, and the `JpaRepository`.
+3. **dal**: add a Flyway migration `backend/src/main/resources/db/migration/V<n>__<name>.sql`, the `@Entity`, and the `JpaRepository`.
 4. **businesslogic.core**: add an `@Service` with the rules. Keep it free of Temporal annotations.
 5. **businesslogic.activity** (orchestrated only): define the `@ActivityInterface` and an `@ActivityImpl(workers = "wallet-service-worker")` that delegates to the core service.
 6. **businesslogic.workflow** (orchestrated only): define the `@WorkflowInterface` and `@WorkflowImpl(workers = "wallet-service-worker")` that orchestrates activities.
@@ -68,23 +100,27 @@ Steps 5–6 apply only to features that need orchestration (multi-step, retryabl
 
 ## Commands
 
+All Gradle commands run from `backend/`. All docker-compose commands run from `docker/`.
+
 | Task | Command |
 | --- | --- |
-| Compile | `./gradlew compileJava` |
-| Run unit tests | `./gradlew test` |
-| Build (compile + test + jar) | `./gradlew build` |
-| Run locally | `./gradlew bootRun` |
-| Build + start full stack | `docker compose up -d --build` |
-| Tail app logs | `docker compose logs -f app` |
-| Stop full stack | `docker compose down` |
-| Reset DB volume | `docker compose down -v` |
+| Compile (backend) | `cd backend && ./gradlew compileJava` |
+| Run unit tests (backend) | `cd backend && ./gradlew test` |
+| Build (compile + test + jar) | `cd backend && ./gradlew build` |
+| Run backend locally | `cd backend && ./gradlew bootRun` |
+| Build + start full stack | `cd docker && docker compose up -d --build` |
+| Tail app logs | `cd docker && docker compose logs -f app` |
+| Stop full stack | `cd docker && docker compose down` |
+| Reset DB volume | `cd docker && docker compose down -v` |
+| Run frontend dev server (when scaffolded) | `cd frontend && npm run dev` |
 
-Once `docker compose up -d` is running:
+Once `cd docker && docker compose up -d` is running:
 - App: `http://localhost:8081` (e.g. `POST /api/v1/users {"email":"a@b.com","role":"CONSUMER","homeRegion":"us-east-1"}`)
 - Actuator health: `http://localhost:8081/actuator/health`
 - Swagger UI: `http://localhost:8081/swagger-ui/index.html`
 - Temporal UI: `http://localhost:8233`
 - DB UI (pgweb): `http://localhost:8082`
+- Frontend dev (when scaffolded, started separately): `http://localhost:5173`
 
 ## Conventions
 

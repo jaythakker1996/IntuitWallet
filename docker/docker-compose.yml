@@ -60,7 +60,7 @@ services:
       - wallet-net
 
   app:
-    build: .
+    build: ../backend
     container_name: wallet-app
     depends_on:
       app-postgres:
