@@ -34,7 +34,7 @@ export default function TransactionDetailPage() {
 
   return (
     <div className="page">
-      <Link to="/wallet/transactions">← Back to transactions</Link>
+      <Link to="/wallet/transactions" className="back-link">← Back to transactions</Link>
       <h1>Transaction</h1>
       <ErrorBox error={error} />
       {tx && (

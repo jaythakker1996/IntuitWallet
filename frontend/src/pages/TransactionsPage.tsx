@@ -27,11 +27,14 @@ export default function TransactionsPage() {
 
   return (
     <div className="page">
-      <Link to="/wallet">← Back to wallet</Link>
+      <Link to="/wallet" className="back-link">← Back to wallet</Link>
       <h1>Transaction history</h1>
       <ErrorBox error={error} />
       {txs.length === 0 ? (
-        <p>No transactions yet.</p>
+        <div className="empty">
+          <span className="empty-icon">📭</span>
+          <p>No transactions yet.</p>
+        </div>
       ) : (
         <div className="tx-list">
           {txs.map((t) => (

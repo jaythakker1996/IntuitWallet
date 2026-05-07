@@ -8,6 +8,7 @@ import type {
 } from '../types/api';
 import TransactionRow from '../components/TransactionRow';
 import ErrorBox from '../components/ErrorBox';
+import { formatAbsolute, formatAmount } from '../utils/format';
 
 export default function StablecoinPage() {
   const { stablecoin } = useParams<{ stablecoin: string }>();
@@ -48,34 +49,31 @@ export default function StablecoinPage() {
     return (
       <div className="page-narrow">
         <h1>{stablecoin}</h1>
-        <p>You haven't transacted in {stablecoin} yet.</p>
-        <Link to="/wallet">← Back to wallet</Link>
+        <p className="muted">You haven't transacted in {stablecoin} yet.</p>
+        <Link to="/wallet" className="link">← Back to wallet</Link>
       </div>
     );
   }
 
   return (
     <div className="page">
-      <Link to="/wallet">← Back to wallet</Link>
+      <Link to="/wallet" className="back-link">← Back to wallet</Link>
       <h1>{stablecoin}</h1>
       <ErrorBox error={error} />
       {balance && (
         <div className="balance-detail">
-          <p>
-            <strong>Available:</strong> {balance.runningAvailable}
-          </p>
-          <p>
-            <strong>Pending:</strong> {balance.runningPending}
-          </p>
-          <p className="muted">
-            Last entry sequence: {balance.lastEntrySequence}, at{' '}
-            {new Date(balance.lastEntryAt).toLocaleString()}
-          </p>
+          <div className="label">Available</div>
+          <div className="big-amount">{formatAmount(balance.runningAvailable)}</div>
+          <div className="muted">
+            Pending: {formatAmount(balance.runningPending)} · entry #{balance.lastEntrySequence} · {formatAbsolute(balance.lastEntryAt)}
+          </div>
         </div>
       )}
-      <h2>Transactions in {stablecoin}</h2>
+      <h2>Transactions</h2>
       {txs.length === 0 ? (
-        <p>No transactions in this stablecoin yet.</p>
+        <div className="empty">
+          <p>No transactions in {stablecoin} yet.</p>
+        </div>
       ) : (
         <div className="tx-list">
           {txs.map((t) => (

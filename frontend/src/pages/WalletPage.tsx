@@ -6,6 +6,7 @@ import type { WalletBalanceEntry, WalletResponse } from '../types/api';
 import BalanceRow from '../components/BalanceRow';
 import Button from '../components/Button';
 import ErrorBox from '../components/ErrorBox';
+import { shortId } from '../utils/format';
 
 export default function WalletPage() {
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
@@ -64,8 +65,10 @@ export default function WalletPage() {
     return (
       <div className="page-narrow">
         <h1>Create your wallet</h1>
-        <p>You don't have a wallet yet.</p>
-        <Button onClick={handleCreate}>Create wallet</Button>
+        <p className="muted">You don't have a wallet yet. Create one to start funding and sending.</p>
+        <div style={{ marginTop: 16 }}>
+          <Button onClick={handleCreate}>Create wallet</Button>
+        </div>
         <ErrorBox error={error} />
       </div>
     );
@@ -74,18 +77,27 @@ export default function WalletPage() {
   return (
     <div className="page">
       <h1>Wallet</h1>
-      <p className="muted">{wallet?.walletId}</p>
+      <p className="muted" title={wallet?.walletId}>
+        {wallet ? shortId(wallet.walletId) : ''}
+      </p>
       <ErrorBox error={error} />
       {balances.length === 0 ? (
-        <p>
-          No balances yet. <Link to="/fund">Fund your wallet</Link>.
-        </p>
-      ) : (
-        <div className="balance-list">
-          {balances.map((b) => (
-            <BalanceRow key={b.stablecoin} balance={b} />
-          ))}
+        <div className="empty">
+          <span className="empty-icon">💰</span>
+          <p>No balances yet.</p>
+          <p>
+            <Link to="/fund">Fund your wallet</Link> to get started.
+          </p>
         </div>
+      ) : (
+        <>
+          <h2>Balances</h2>
+          <div className="balance-list">
+            {balances.map((b) => (
+              <BalanceRow key={b.stablecoin} balance={b} />
+            ))}
+          </div>
+        </>
       )}
       <Link to="/wallet/transactions" className="link">
         View transaction history →
