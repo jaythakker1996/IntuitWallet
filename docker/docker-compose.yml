@@ -114,7 +114,6 @@ services:
 
 networks:
   wallet-net:
-    name: wallet-net
 
 volumes:
   app-postgres-data:
