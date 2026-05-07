@@ -84,6 +84,17 @@ export interface TransactionResponse {
   createdAt: string;
 }
 
+export interface QrResponse {
+  qrCodeId: string;
+  walletId: string;
+  payload: string;
+  type: 'STATIC' | 'DYNAMIC';
+  status: 'ACTIVE' | 'REVOKED';
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ApiError {
   error: string;
   message?: string;

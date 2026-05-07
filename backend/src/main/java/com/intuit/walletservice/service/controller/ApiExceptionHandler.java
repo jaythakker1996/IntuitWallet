@@ -2,6 +2,7 @@ package com.intuit.walletservice.service.controller;
 
 import com.intuit.walletservice.businesslogic.core.IdempotencyConflictException;
 import com.intuit.walletservice.businesslogic.core.InsufficientBalanceException;
+import com.intuit.walletservice.businesslogic.core.QrNotFoundException;
 import com.intuit.walletservice.businesslogic.core.StablecoinBalanceNotFoundException;
 import com.intuit.walletservice.businesslogic.core.TransactionNotFoundException;
 import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
@@ -39,6 +40,12 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, String>> handleTransactionNotFound(TransactionNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Map.of("error", "TRANSACTION_NOT_FOUND", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(QrNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleQrNotFound(QrNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "QR_NOT_FOUND", "message", ex.getMessage()));
     }
 
     @ExceptionHandler(WalletNotActiveException.class)

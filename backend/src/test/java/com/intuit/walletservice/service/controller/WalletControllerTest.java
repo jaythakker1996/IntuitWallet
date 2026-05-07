@@ -1,6 +1,10 @@
 package com.intuit.walletservice.service.controller;
 
 import com.intuit.walletservice.businesslogic.core.LedgerCoreService;
+import com.intuit.walletservice.businesslogic.core.QrCoreService;
+import com.intuit.walletservice.businesslogic.core.QrCoreService.CreateQrResult;
+import com.intuit.walletservice.businesslogic.core.QrNotFoundException;
+import com.intuit.walletservice.businesslogic.core.QrView;
 import com.intuit.walletservice.businesslogic.core.StablecoinBalanceNotFoundException;
 import com.intuit.walletservice.businesslogic.core.TransactionNotFoundException;
 import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
@@ -53,6 +57,9 @@ class WalletControllerTest {
 
     @MockBean
     private LedgerCoreService ledgerCoreService;
+
+    @MockBean
+    private QrCoreService qrCoreService;
 
     @Test
     void post_validBodyNewUser_returns201() throws Exception {
@@ -418,6 +425,125 @@ class WalletControllerTest {
         UUID walletId = UUID.randomUUID();
         mockMvc.perform(get("/api/v1/wallets/{id}/transactions/not-a-uuid", walletId))
                 .andExpect(status().isBadRequest());
+    }
+
+    // ===== qr (spec/011) =====
+
+    @Test
+    void createQr_validWallet_returns201WithExpectedPayload() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        QrView view = newQrView(walletId);
+        when(qrCoreService.createIfMissing(eq(walletId)))
+                .thenReturn(new CreateQrResult(view, true));
+
+        mockMvc.perform(post("/api/v1/wallets/{id}/qr", walletId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.qrCodeId").value(view.qrCodeId().toString()))
+                .andExpect(jsonPath("$.walletId").value(walletId.toString()))
+                .andExpect(jsonPath("$.payload").value("wallet:" + walletId))
+                .andExpect(jsonPath("$.type").value("STATIC"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void createQr_idempotentRetry_returns200WithSameQrCodeId() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        QrView view = newQrView(walletId);
+        when(qrCoreService.createIfMissing(eq(walletId)))
+                .thenReturn(new CreateQrResult(view, false));
+
+        mockMvc.perform(post("/api/v1/wallets/{id}/qr", walletId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.qrCodeId").value(view.qrCodeId().toString()));
+    }
+
+    @Test
+    void createQr_unknownWallet_returns404WithWalletNotFound() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        when(qrCoreService.createIfMissing(eq(walletId)))
+                .thenThrow(new WalletNotFoundException("Wallet not found: " + walletId));
+
+        mockMvc.perform(post("/api/v1/wallets/{id}/qr", walletId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("WALLET_NOT_FOUND"));
+    }
+
+    @Test
+    void createQr_frozenWallet_returns409() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        when(qrCoreService.createIfMissing(eq(walletId)))
+                .thenThrow(new com.intuit.walletservice.businesslogic.core.WalletNotActiveException(
+                        "Wallet not ACTIVE: " + walletId + " (status=FROZEN)"));
+
+        mockMvc.perform(post("/api/v1/wallets/{id}/qr", walletId))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void createQr_malformedWalletId_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/wallets/not-a-uuid/qr"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getQr_existing_returns200() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        QrView view = newQrView(walletId);
+        when(qrCoreService.getByWalletId(eq(walletId))).thenReturn(view);
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/qr", walletId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.qrCodeId").value(view.qrCodeId().toString()))
+                .andExpect(jsonPath("$.payload").value("wallet:" + walletId));
+    }
+
+    @Test
+    void getQr_walletButNoQr_returns404WithQrNotFound() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        UUID intuitAccountId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        when(walletCoreService.getById(eq(walletId)))
+                .thenReturn(new WalletView(walletId, intuitAccountId, "USER", "ACTIVE", now, now));
+        when(qrCoreService.getByWalletId(eq(walletId)))
+                .thenThrow(new QrNotFoundException("QR not found for wallet: " + walletId));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/qr", walletId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("QR_NOT_FOUND"));
+    }
+
+    @Test
+    void getQr_unknownWallet_returns404WithWalletNotFound() throws Exception {
+        UUID walletId = UUID.randomUUID();
+        when(walletCoreService.getById(eq(walletId)))
+                .thenThrow(new WalletNotFoundException("Wallet not found: " + walletId));
+
+        mockMvc.perform(get("/api/v1/wallets/{id}/qr", walletId))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("WALLET_NOT_FOUND"));
+    }
+
+    @Test
+    void getQr_malformedWalletId_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/wallets/not-a-uuid/qr"))
+                .andExpect(status().isBadRequest());
+    }
+
+    private static QrView newQrView(UUID walletId) {
+        OffsetDateTime now = OffsetDateTime.parse("2026-05-06T12:00:00Z");
+        return new QrView(
+                UUID.randomUUID(),
+                walletId,
+                "wallet:" + walletId,
+                "STATIC",
+                "ACTIVE",
+                null,
+                now,
+                now);
     }
 
     private CreateWalletWorkflow mockWorkflowStub() {

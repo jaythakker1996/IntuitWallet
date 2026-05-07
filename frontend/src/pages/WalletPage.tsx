@@ -6,6 +6,7 @@ import type { WalletBalanceEntry, WalletResponse } from '../types/api';
 import BalanceRow from '../components/BalanceRow';
 import Button from '../components/Button';
 import ErrorBox from '../components/ErrorBox';
+import WalletQrSection from '../components/WalletQrSection';
 import { shortId } from '../utils/format';
 
 export default function WalletPage() {
@@ -102,6 +103,7 @@ export default function WalletPage() {
       <Link to="/wallet/transactions" className="link">
         View transaction history →
       </Link>
+      {wallet && <WalletQrSection walletId={wallet.walletId} />}
     </div>
   );
 }

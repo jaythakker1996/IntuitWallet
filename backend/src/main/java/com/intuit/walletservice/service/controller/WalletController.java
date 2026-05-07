@@ -1,11 +1,14 @@
 package com.intuit.walletservice.service.controller;
 
 import com.intuit.walletservice.businesslogic.core.LedgerCoreService;
+import com.intuit.walletservice.businesslogic.core.QrCoreService;
+import com.intuit.walletservice.businesslogic.core.QrCoreService.CreateQrResult;
 import com.intuit.walletservice.businesslogic.core.UserNotFoundException;
 import com.intuit.walletservice.businesslogic.core.WalletCoreService;
 import com.intuit.walletservice.businesslogic.core.WalletCoreService.CreateWalletResult;
 import com.intuit.walletservice.businesslogic.workflow.CreateWalletWorkflow;
 import com.intuit.walletservice.service.dto.CreateWalletRequest;
+import com.intuit.walletservice.service.dto.QrResponse;
 import com.intuit.walletservice.service.dto.WalletBalanceResponse;
 import com.intuit.walletservice.service.dto.WalletBalancesResponse;
 import com.intuit.walletservice.service.dto.WalletResponse;
@@ -35,14 +38,17 @@ public class WalletController {
     private final WorkflowClient workflowClient;
     private final WalletCoreService walletCoreService;
     private final LedgerCoreService ledgerCoreService;
+    private final QrCoreService qrCoreService;
 
     public WalletController(
             WorkflowClient workflowClient,
             WalletCoreService walletCoreService,
-            LedgerCoreService ledgerCoreService) {
+            LedgerCoreService ledgerCoreService,
+            QrCoreService qrCoreService) {
         this.workflowClient = workflowClient;
         this.walletCoreService = walletCoreService;
         this.ledgerCoreService = ledgerCoreService;
+        this.qrCoreService = qrCoreService;
     }
 
     @PostMapping
@@ -97,6 +103,19 @@ public class WalletController {
             @PathVariable UUID walletId, @PathVariable UUID txId) {
         walletCoreService.getById(walletId);
         return WalletTransactionResponse.from(ledgerCoreService.getTransactionForWallet(walletId, txId));
+    }
+
+    @PostMapping("/{walletId}/qr")
+    public ResponseEntity<QrResponse> createQr(@PathVariable UUID walletId) {
+        CreateQrResult result = qrCoreService.createIfMissing(walletId);
+        HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
+        return ResponseEntity.status(status).body(QrResponse.from(result.qr()));
+    }
+
+    @GetMapping("/{walletId}/qr")
+    public QrResponse getQr(@PathVariable UUID walletId) {
+        walletCoreService.getById(walletId);
+        return QrResponse.from(qrCoreService.getByWalletId(walletId));
     }
 
     private static void translateWorkflowFailure(WorkflowFailedException ex, UUID intuitAccountId) {
